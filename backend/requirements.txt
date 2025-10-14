@@ -31,3 +31,10 @@ eventlet==0.33.3
 # Opcional: GPU Support (descomenta si tienes CUDA)
 # torch==2.1.2+cu118
 # torchvision==0.16.2+cu118
+Flask
+flask-cors
+Flask-SocketIO
+imageai
+opencv-python
+ultralytics
+gunicorn
