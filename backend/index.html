@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Detector Multiclase - SecureVision AI Pro</title>
+    
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    
+    <!-- Iconos Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Rajdhani', sans-serif;
+        }
+        
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        
+        body {
+            background: #0a0e1a;
+            min-height: 100vh;
+        }
+        
+        .glass-effect {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(6, 182, 212, 0.15);
+        }
+        
+        .glass-effect-strong {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(30px);
+            border: 2px solid rgba(34, 211, 238, 0.3);
+            box-shadow: 0 0 40px rgba(6, 182, 212, 0.3);
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 600px;
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 2px solid rgba(6, 182, 212, 0.3);
+            box-shadow: 0 0 40px rgba(6, 182, 212, 0.2);
+        }
+        
+        #videoDisplay {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .scan-effect {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #06b6d4, transparent);
+            animation: scanning 3s linear infinite;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        
+        @keyframes scanning {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(600px); }
+        }
+        
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 1000;
+            min-width: 350px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(20, 184, 166, 0.1) 100%);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(6, 182, 212, 0.6);
+            box-shadow: 0 12px 40px rgba(6, 182, 212, 0.3);
+        }
+        
+        .recording-indicator {
+            animation: blink 1s ease-in-out infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.2; }
+        }
+        
+        .grid-background {
+            background-image: 
+                linear-gradient(rgba(6, 182, 212, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        
+        .slide-in {
+            animation: slideIn 0.5s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .counter-display {
+            font-size: 120px;
+            line-height: 1;
+            text-shadow: 0 0 40px rgba(6, 182, 212, 0.8);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.9; transform: scale(1.02); }
+        }
+        
+        .upload-zone {
+            border: 3px dashed rgba(6, 182, 212, 0.5);
+            transition: all 0.3s ease;
+        }
+        
+        .upload-zone:hover {
+            border-color: rgba(6, 182, 212, 1);
+            background: rgba(6, 182, 212, 0.1);
+        }
+        
+        .upload-zone.dragover {
+            border-color: #22d3ee;
+            background: rgba(34, 211, 238, 0.2);
+            transform: scale(1.02);
+        }
+        
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body class="antialiased grid-background">
+    
+    <!-- Notificaciones -->
+    <div id="notifications" class="notification"></div>
+    
+    <!-- Barra superior -->
+    <nav class="glass-effect-strong shadow-2xl border-b-2 border-cyan-500">
+        <div class="max-w-full mx-auto px-6">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center space-x-6">
+                    <div class="flex items-center space-x-3">
+                        <div class="relative">
+                            <i data-lucide="scan" class="w-12 h-12 text-cyan-400"></i>
+                            <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full recording-indicator" id="systemActive"></div>
+                        </div>
+                        <div>
+                            <span class="text-2xl font-black text-cyan-400 font-orbitron tracking-wider">DETECTOR MULTICLASE IA</span>
+                            <div class="text-xs text-cyan-300 font-orbitron">PERSONAS • VEHÍCULOS • ANIMALES • OBJETOS</div>
+                        </div>
+                    </div>
+                    <div class="h-12 w-px bg-cyan-500 opacity-30"></div>
+                    <div class="flex items-center space-x-4">
+                        <div class="text-cyan-300">
+                            <div class="text-xs text-gray-400 font-orbitron">FECHA/HORA</div>
+                            <div class="text-sm font-bold font-orbitron" id="currentTime"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-6">
+                    <div class="glass-effect px-4 py-2 rounded border border-cyan-500">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-3 h-3 bg-green-500 rounded-full recording-indicator" id="recordingIndicator" style="display: none;"></div>
+                            <span class="text-sm text-cyan-300 font-orbitron font-bold" id="statusText">ESPERANDO ARCHIVO</span>
+                        </div>
+                    </div>
+                    
+                    <button onclick="resetCounter()" class="glass-effect px-4 py-2 rounded border border-red-500 hover:bg-red-500 hover:bg-opacity-20 transition">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="refresh-ccw" class="w-4 h-4 text-red-400"></i>
+                            <span class="text-sm text-red-400 font-orbitron font-bold">REINICIAR</span>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="flex h-screen pt-20">
+        <!-- Panel de Control Lateral -->
+        <div class="w-80 glass-effect-strong shadow-2xl p-6 border-r-2 border-cyan-500 overflow-y-auto">
+            <div class="mb-6">
+                <h2 class="text-cyan-400 font-orbitron font-bold text-lg mb-4 tracking-wider">PANEL DE CONTROL</h2>
+                <div class="space-y-2">
+                    <button onclick="changeView('live')" id="btnLive" class="w-full flex items-center space-x-3 px-4 py-3 rounded bg-gradient-to-r from-cyan-600 to-cyan-700 text-white transition font-orbitron text-sm font-bold tracking-wide shadow-lg">
+                        <i data-lucide="video" class="w-5 h-5"></i>
+                        <span>DETECCIÓN EN VIVO</span>
+                    </button>
+                    <button onclick="changeView('history')" id="btnHistory" class="w-full flex items-center space-x-3 px-4 py-3 rounded text-gray-300 hover:bg-gray-800 transition font-orbitron text-sm font-bold tracking-wide border border-transparent hover:border-cyan-500">
+                        <i data-lucide="database" class="w-5 h-5"></i>
+                        <span>HISTORIAL</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="text-cyan-400 font-orbitron font-bold text-sm mb-3 tracking-wider">📁 CARGAR ARCHIVO</h3>
+                <div class="space-y-3">
+                    <input type="file" id="fileInput" accept="image/*,video/*" class="hidden" onchange="handleFileSelect(event)">
+                    <button onclick="document.getElementById('fileInput').click()" class="w-full flex items-center justify-center space-x-2 px-4 py-4 rounded bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold transition shadow-lg font-orbitron tracking-wide">
+                        <i data-lucide="upload" class="w-5 h-5"></i>
+                        <span>SUBIR IMAGEN/VIDEO</span>
+                    </button>
+                    <div id="uploadProgress" class="hidden">
+                        <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-cyan-500 to-green-500 progress-bar" id="progressBar" style="width: 0%"></div>
+                        </div>
+                        <p class="text-xs text-cyan-400 mt-1 font-orbitron text-center" id="progressText">0%</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-6" id="videoControls" style="display: none;">
+                <h3 class="text-cyan-400 font-orbitron font-bold text-sm mb-3 tracking-wider">🎬 CONTROLES VIDEO</h3>
+                <div class="space-y-3">
+                    <button onclick="toggleDetection()" id="btnToggleDetection" class="w-full flex items-center justify-center space-x-2 px-4 py-4 rounded bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold transition shadow-lg font-orbitron tracking-wide">
+                        <i data-lucide="play" class="w-5 h-5" id="iconToggle"></i>
+                        <span id="textToggle">INICIAR DETECCIÓN</span>
+                    </button>
+                    
+                    <button onclick="captureFrame()" class="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-bold transition shadow-lg font-orbitron text-sm tracking-wide">
+                        <i data-lucide="camera" class="w-5 h-5"></i>
+                        <span>CAPTURAR FRAME</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mb-6 glass-effect p-4 rounded border border-cyan-500">
+                <h3 class="text-cyan-400 font-orbitron font-bold text-sm mb-3 tracking-wider">RENDIMIENTO</h3>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-gray-400 font-orbitron">FPS</span>
+                            <span class="text-green-400 font-bold font-orbitron" id="fpsCounter">0</span>
+                        </div>
+                        <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-green-500 to-green-400" id="fpsBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-gray-400 font-orbitron">TIEMPO PROCESO</span>
+                            <span class="text-cyan-400 font-bold font-orbitron" id="processTime">0ms</span>
+                        </div>
+                        <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-cyan-500 to-cyan-400" id="processBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div id="videoProgress" style="display: none;">
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-gray-400 font-orbitron">PROGRESO VIDEO</span>
+                            <span class="text-purple-400 font-bold font-orbitron" id="videoProgressText">0%</span>
+                        </div>
+                        <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-purple-500 to-pink-400" id="videoProgressBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="glass-effect p-4 rounded border border-cyan-500 mb-6">
+                <h3 class="text-cyan-400 font-orbitron font-bold text-sm mb-3 tracking-wider">ESTADO SISTEMA</h3>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-400 font-orbitron">BACKEND</span>
+                        <span class="flex items-center space-x-1">
+                            <div class="w-2 h-2 rounded-full" id="backendStatus"></div>
+                            <span class="font-bold" id="backendText">DESCONECTADO</span>
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-400 font-orbitron">DETECTOR YOLO</span>
+                        <span class="flex items-center space-x-1">
+                            <div class="w-2 h-2 rounded-full" id="detectorStatus"></div>
+                            <span class="font-bold" id="detectorText">INACTIVO</span>
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-400 font-orbitron">ARCHIVO</span>
+                        <span class="flex items-center space-x-1">
+                            <div class="w-2 h-2 rounded-full" id="fileStatus"></div>
+                            <span class="font-bold" id="fileText">SIN CARGAR</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="glass-effect p-4 rounded border border-yellow-500">
+                <h3 class="text-yellow-400 font-orbitron font-bold text-sm mb-2 tracking-wider">⚡ CATEGORÍAS</h3>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 bg-cyan-500 rounded"></div>
+                        <span class="text-gray-300">Personas</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 bg-green-500 rounded"></div>
+                        <span class="text-gray-300">Vehículos</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 bg-yellow-500 rounded"></div>
+                        <span class="text-gray-300">Animales</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 bg-purple-500 rounded"></div>
+                        <span class="text-gray-300">Objetos</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contenido Principal -->
+        <div class="flex-1 overflow-auto p-6">
+            
+            <!-- Vista en Vivo -->
+            <div id="liveView" class="space-y-6">
+                <!-- Contador principal gigante -->
+                <div class="glass-effect-strong rounded-lg p-8 text-center border-2 border-cyan-500">
+                    <div class="text-cyan-400 font-orbitron text-xl mb-4 tracking-wider">TOTAL DE DETECCIONES</div>
+                    <div class="counter-display text-cyan-400 font-black font-orbitron" id="mainCounter">0</div>
+                    <div class="text-gray-400 font-orbitron text-sm mt-4">OBJETOS ÚNICOS DETECTADOS</div>
+                </div>
+                
+                <!-- Métricas en tiempo real -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="stat-card rounded-lg p-5 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-20 h-20 bg-cyan-500 opacity-10 rounded-full -mr-10 -mt-10"></div>
+                        <div class="flex items-center justify-between relative z-10">
+                            <div>
+                                <p class="text-gray-400 text-xs font-orbitron font-bold tracking-wider">PERSONAS</p>
+                                <p class="text-4xl font-black text-cyan-400 mt-2 font-orbitron" id="personasCount">0</p>
+                                <p class="text-xs text-cyan-400 mt-1 font-orbitron">DETECTADAS</p>
+                            </div>
+                            <div class="p-4 bg-cyan-500 bg-opacity-20 rounded-lg">
+                                <i data-lucide="users" class="w-10 h-10 text-cyan-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card rounded-lg p-5 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-20 h-20 bg-green-500 opacity-10 rounded-full -mr-10 -mt-10"></div>
+                        <div class="flex items-center justify-between relative z-10">
+                            <div>
+                                <p class="text-gray-400 text-xs font-orbitron font-bold tracking-wider">VEHÍCULOS</p>
+                                <p class="text-4xl font-black text-green-400 mt-2 font-orbitron" id="vehiculosCount">0</p>
+                                <p class="text-xs text-green-400 mt-1 font-orbitron">DETECTADOS</p>
+                            </div>
+                            <div class="p-4 bg-green-500 bg-opacity-20 rounded-lg">
+                                <i data-lucide="car" class="w-10 h-10 text-green-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card rounded-lg p-5 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-20 h-20 bg-yellow-500 opacity-10 rounded-full -mr-10 -mt-10"></div>
+                        <div class="flex items-center justify-between relative z-10">
+                            <div>
+                                <p class="text-gray-400 text-xs font-orbitron font-bold tracking-wider">ANIMALES</p>
+                                <p class="text-4xl font-black text-yellow-400 mt-2 font-orbitron" id="animalesCount">0</p>
+                                <p class="text-xs text-yellow-400 mt-1 font-orbitron">DETECTADOS</p>
+                            </div>
+                            <div class="p-4 bg-yellow-500 bg-opacity-20 rounded-lg">
+                                <i data-lucide="dog" class="w-10 h-10 text-yellow-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card rounded-lg p-5 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-20 h-20 bg-purple-500 opacity-10 rounded-full -mr-10 -mt-10"></div>
+                        <div class="flex items-center justify-between relative z-10">
+                            <div>
+                                <p class="text-gray-400 text-xs font-orbitron font-bold tracking-wider">OBJETOS</p>
+                                <p class="text-4xl font-black text-purple-400 mt-2 font-orbitron" id="objetosCount">0</p>
+                                <p class="text-xs text-purple-400 mt-1 font-orbitron">DETECTADOS</p>
+                            </div>
+                            <div class="p-4 bg-purple-500 bg-opacity-20 rounded-lg">
+                                <i data-lucide="box" class="w-10 h-10 text-purple-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Video y lista -->
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <!-- Video -->
+                    <div class="lg:col-span-3 glass-effect-strong rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-3 h-3 bg-red-500 rounded-full recording-indicator" id="processingIndicator" style="display: none;"></div>
+                                <span class="text-white font-orbitron font-bold tracking-wider" id="videoTitle">VISUALIZADOR + YOLO</span>
+                            </div>
+                            <div class="flex items-center space-x-4 text-xs font-orbitron">
+                                <span class="text-gray-400">ACTIVOS: <span class="text-cyan-400 font-bold" id="activeObjects">0</span></span>
+                            </div>
+                        </div>
+                        <div class="video-container">
+                            <div class="scan-effect" id="scanEffect" style="display: none;"></div>
+                            <img id="videoDisplay" src="" alt="Video Stream" style="display: none;">
+                            <div id="noVideo" class="flex items-center justify-center h-full text-gray-500">
+                                <div class="text-center upload-zone rounded-lg p-12 cursor-pointer" onclick="document.getElementById('fileInput').click()" 
+                                     ondragover="handleDragOver(event)" 
+                                     ondragleave="handleDragLeave(event)"
+                                     ondrop="handleDrop(event)">
+                                    <i data-lucide="upload-cloud" class="w-24 h-24 mx-auto mb-6 text-cyan-400 opacity-50"></i>
+                                    <p class="font-orbitron text-2xl font-bold text-cyan-400 mb-2">ARRASTRA AQUÍ TU ARCHIVO</p>
+                                    <p class="text-sm mb-4">o haz click para seleccionar</p>
+                                    <div class="flex justify-center space-x-8 text-xs">
+                                        <div>
+                                            <p class="text-cyan-400 font-bold mb-1">📸 IMÁGENES</p>
+                                            <p>JPG, PNG, BMP, GIF</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-green-400 font-bold mb-1">🎬 VIDEOS</p>
+                                            <p>MP4, AVI, MOV, MKV</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Lista de objetos activos -->
+                    <div class="glass-effect-strong rounded-lg p-4 border border-cyan-500">
+                        <h3 class="text-cyan-400 font-orbitron font-bold text-sm mb-4 tracking-wider flex items-center">
+                            <i data-lucide="target" class="w-4 h-4 mr-2"></i>
+                            OBJETOS DETECTADOS
+                        </h3>
+                        <div id="liveObjectList" class="space-y-2 max-h-[520px] overflow-y-auto">
+                            <div class="text-center text-gray-500 text-xs font-orbitron py-4">
+                                NO HAY OBJETOS DETECTADOS
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Vista de Historial -->
+            <div id="historyView" class="space-y-6" style="display: none;">
+                <div class="glass-effect-strong rounded-lg p-6 border border-cyan-500">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-cyan-400 font-orbitron font-bold text-xl tracking-wider">HISTORIAL DE DETECCIONES</h3>
+                        <button onclick="exportData()" class="px-4 py-2 bg-gradient-to-r from-cyan-600 to-cyan-700 text-white rounded font-orbitron text-xs font-bold tracking-wide hover:from-cyan-500 hover:to-cyan-600 transition">
+                            <i data-lucide="download" class="w-4 h-4 inline mr-2"></i>
+                            EXPORTAR CSV
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="border-b-2 border-cyan-500">
+                                <tr class="text-left text-cyan-400 text-xs font-orbitron font-bold">
+                                    <th class="pb-3 px-2">ID</th>
+                                    <th class="pb-3 px-2">CATEGORÍA</th>
+                                    <th class="pb-3 px-2">CLASE</th>
+                                    <th class="pb-3 px-2">PRIMERA VEZ</th>
+                                    <th class="pb-3 px-2">ÚLTIMA VEZ</th>
+                                    <th class="pb-3 px-2">DURACIÓN</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTable" class="text-white text-sm font-orbitron">
+                                <tr>
+                                    <td colspan="6" class="py-12 text-center text-gray-500 font-orbitron">
+                                        <i data-lucide="database" class="w-12 h-12 mx-auto mb-3 opacity-30"></i>
+                                        <div>NO HAY REGISTROS</div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        // ==================== VARIABLES GLOBALES ====================
+        let socket;
+        let isDetecting = false;
+        let detectionHistory = [];
+        let currentFileType = null; // 'image' o 'video'
+        
+        // ==================== INICIALIZACIÓN ====================
+        document.addEventListener('DOMContentLoaded', async () => {
+            lucide.createIcons();
+            updateTime();
+            setInterval(updateTime, 1000);
+            
+            showNotification('Inicializando sistema...', 'info');
+            initializeWebSocket();
+            setupDragAndDrop();
+        });
+        
+        function updateTime() {
+            const now = new Date();
+            const options = { 
+                year: 'numeric', 
+                month: '2-digit', 
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            };
+            document.getElementById('currentTime').textContent = now.toLocaleString('es-ES', options).replace(',', ' •');
+        }
+        
+        // ==================== WEBSOCKET ====================
+        function initializeWebSocket() {
+            try {
+                socket = io('http://localhost:5000');
+                
+                socket.on('connect', () => {
+                    console.log('✅ Conectado al servidor');
+                    updateBackendStatus(true);
+                    updateDetectorStatus(true);
+                    showNotification('Conectado al servidor backend', 'success');
+                });
+                
+                socket.on('disconnect', () => {
+                    console.log('❌ Desconectado del servidor');
+                    updateBackendStatus(false);
+                    showNotification('Desconectado del servidor', 'error');
+                });
+                
+                socket.on('detection_update', (data) => {
+                    handleDetectionUpdate(data);
+                });
+                
+                socket.on('image_processed', (data) => {
+                    handleImageProcessed(data);
+                });
+                
+                socket.on('video_loop', (data) => {
+                    showNotification('Video completado - Reiniciando', 'info');
+                });
+                
+                socket.on('error', (data) => {
+                    showNotification(data.message, 'error');
+                });
+                
+            } catch (error) {
+                console.error('Error inicializando WebSocket:', error);
+                showNotification('Error al conectar con el servidor', 'error');
+            }
+        }
+        
+        function handleDetectionUpdate(data) {
+            // Actualizar frame
+            const videoDisplay = document.getElementById('videoDisplay');
+            const noVideo = document.getElementById('noVideo');
+            const scanEffect = document.getElementById('scanEffect');
+            const processingIndicator = document.getElementById('processingIndicator');
+            
+            if (data.frame) {
+                videoDisplay.src = 'data:image/jpeg;base64,' + data.frame;
+                videoDisplay.style.display = 'block';
+                noVideo.style.display = 'none';
+                scanEffect.style.display = 'block';
+                processingIndicator.style.display = 'block';
+            }
+            
+            // Actualizar estadísticas
+            if (data.stats) {
+                document.getElementById('fpsCounter').textContent = data.stats.fps || 0;
+                document.getElementById('fpsBar').style.width = `${Math.min((data.stats.fps / 30) * 100, 100)}%`;
+                document.getElementById('processTime').textContent = `${data.stats.process_time_ms || 0}ms`;
+                document.getElementById('processBar').style.width = `${Math.min(data.stats.process_time_ms / 2, 100)}%`;
+                document.getElementById('activeObjects').textContent = data.stats.active_tracks || 0;
+            }
+            
+            // Progreso del video
+            if (data.progress !== undefined) {
+                document.getElementById('videoProgress').style.display = 'block';
+                document.getElementById('videoProgressText').textContent = `${data.progress}%`;
+                document.getElementById('videoProgressBar').style.width = `${data.progress}%`;
+            }
+            
+            // Actualizar contadores
+            if (data.full_stats && data.full_stats.counters) {
+                updateCounters(data.full_stats.counters);
+            }
+            
+            // Actualizar lista de objetos
+            if (data.full_stats && data.full_stats.tracked_objects) {
+                updateObjectList(data.full_stats.tracked_objects);
+            }
+        }
+        
+        function handleImageProcessed(data) {
+            const videoDisplay = document.getElementById('videoDisplay');
+            const noVideo = document.getElementById('noVideo');
+            const scanEffect = document.getElementById('scanEffect');
+            
+            if (data.frame) {
+                videoDisplay.src = 'data:image/jpeg;base64,' + data.frame;
+                videoDisplay.style.display = 'block';
+                noVideo.style.display = 'none';
+                scanEffect.style.display = 'none';
+            }
+            
+            // Actualizar estadísticas
+            if (data.stats) {
+                document.getElementById('processTime').textContent = `${data.stats.process_time_ms || 0}ms`;
+                document.getElementById('processBar').style.width = `${Math.min(data.stats.process_time_ms / 2, 100)}%`;
+                document.getElementById('activeObjects').textContent = data.detections ? data.detections.length : 0;
+            }
+            
+            // Actualizar contadores
+            if (data.full_stats && data.full_stats.counters) {
+                updateCounters(data.full_stats.counters);
+            }
+            
+            // Actualizar lista de objetos
+            if (data.full_stats && data.full_stats.tracked_objects) {
+                updateObjectList(data.full_stats.tracked_objects);
+            }
+            
+            updateStatus('IMAGEN PROCESADA');
+            showNotification(`✅ Imagen analizada: ${data.detections ? data.detections.length : 0} objetos detectados`, 'success');
+        }
+        
+        function updateCounters(counters) {
+            document.getElementById('mainCounter').textContent = counters.total || 0;
+            document.getElementById('personasCount').textContent = counters.personas || 0;
+            document.getElementById('vehiculosCount').textContent = counters.vehiculos || 0;
+            document.getElementById('animalesCount').textContent = counters.animales || 0;
+            document.getElementById('objetosCount').textContent = counters.objetos || 0;
+        }
+        
+        function updateObjectList(trackedObjects) {
+            const listContainer = document.getElementById('liveObjectList');
+            
+            if (Object.keys(trackedObjects).length === 0) {
+                listContainer.innerHTML = '<div class="text-center text-gray-500 text-xs font-orbitron py-4">NO HAY OBJETOS DETECTADOS</div>';
+                return;
+            }
+            
+            listContainer.innerHTML = '';
+            
+            const categoryColors = {
+                'personas': 'cyan',
+                'vehiculos': 'green',
+                'animales': 'yellow',
+                'objetos': 'purple'
+            };
+            
+            for (const [id, obj] of Object.entries(trackedObjects)) {
+                const color = categoryColors[obj.category] || 'gray';
+                const duration = obj.duration ? obj.duration.toFixed(1) : '0.0';
+                
+                listContainer.innerHTML += `
+                    <div class="glass-effect p-3 rounded border border-${color}-500 text-xs">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-${color}-400 font-orbitron font-bold text-sm">${id}</span>
+                            <span class="text-${color}-400 font-orbitron font-bold">${duration}s</span>
+                        </div>
+                        <div class="text-gray-300 font-orbitron text-xs">
+                            ${obj.class_name} • ${obj.category}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
+        // ==================== MANEJO DE ARCHIVOS ====================
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                await uploadFile(file);
+            }
+        }
+        
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                // Mostrar progreso
+                document.getElementById('uploadProgress').classList.remove('hidden');
+                updateStatus('SUBIENDO ARCHIVO...');
+                
+                const xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = (e.loaded / e.total) * 100;
+                        document.getElementById('progressBar').style.width = percentComplete + '%';
+                        document.getElementById('progressText').textContent = Math.round(percentComplete) + '%';
+                    }
+                });
+                
+                xhr.addEventListener('load', () => {
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        handleUploadSuccess(response);
+                    } else {
+                        const error = JSON.parse(xhr.responseText);
+                        showNotification(error.error || 'Error al subir archivo', 'error');
+                    }
+                    document.getElementById('uploadProgress').classList.add('hidden');
+                });
+                
+                xhr.addEventListener('error', () => {
+                    showNotification('Error de conexión al subir archivo', 'error');
+                    document.getElementById('uploadProgress').classList.add('hidden');
+                });
+                
+                xhr.open('POST', 'http://localhost:5000/api/upload');
+                xhr.send(formData);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showNotification('Error al subir archivo', 'error');
+                document.getElementById('uploadProgress').classList.add('hidden');
+            }
+        }
+        
+        function handleUploadSuccess(response) {
+            currentFileType = response.type;
+            
+            updateFileStatus(true, response.type);
+            
+            if (response.type === 'image') {
+                document.getElementById('videoControls').style.display = 'none';
+                document.getElementById('videoProgress').style.display = 'none';
+                document.getElementById('videoTitle').textContent = '📸 IMAGEN PROCESADA';
+                updateStatus('IMAGEN LISTA');
+                showNotification(`📸 ${response.filename} - Procesada correctamente`, 'success');
+            } else {
+                document.getElementById('videoControls').style.display = 'block';
+                document.getElementById('videoTitle').textContent = '🎬 VIDEO CARGADO';
+                updateStatus('VIDEO LISTO');
+                showNotification(`🎬 ${response.filename} - Listo para procesar`, 'success');
+                
+                if (response.info) {
+                    const info = response.info;
+                    showNotification(`Video: ${info.width}x${info.height}, ${info.fps} FPS, ${info.duration}s`, 'info');
+                }
+            }
+        }
+        
+        // ==================== DRAG AND DROP ====================
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('noVideo');
+            
+            dropZone.addEventListener('dragover', handleDragOver);
+            dropZone.addEventListener('dragleave', handleDragLeave);
+            dropZone.addEventListener('drop', handleDrop);
+        }
+        
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.querySelector('.upload-zone').classList.add('dragover');
+        }
+        
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.querySelector('.upload-zone').classList.remove('dragover');
+        }
+        
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.querySelector('.upload-zone').classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                uploadFile(files[0]);
+            }
+        }
+        
+        // ==================== CONTROLES ====================
+        async function toggleDetection() {
+            if (currentFileType !== 'video') {
+                showNotification('Solo disponible para videos', 'warning');
+                return;
+            }
+            
+            isDetecting = !isDetecting;
+            
+            const btnToggle = document.getElementById('btnToggleDetection');
+            const iconToggle = document.getElementById('iconToggle');
+            const textToggle = document.getElementById('textToggle');
+            const recordingIndicator = document.getElementById('recordingIndicator');
+            
+            try {
+                if (isDetecting) {
+                    const response = await fetch('http://localhost:5000/api/start', {
+                        method: 'POST'
+                    });
+                    
+                    if (response.ok) {
+                        btnToggle.classList.remove('from-green-600', 'to-green-700');
+                        btnToggle.classList.add('from-red-600', 'to-red-700');
+                        iconToggle.setAttribute('data-lucide', 'pause');
+                        textToggle.textContent = 'DETENER DETECCIÓN';
+                        recordingIndicator.style.display = 'block';
+                        updateStatus('PROCESANDO VIDEO');
+                        showNotification('Detección ACTIVADA', 'success');
+                    }
+                } else {
+                    const response = await fetch('http://localhost:5000/api/stop', {
+                        method: 'POST'
+                    });
+                    
+                    if (response.ok) {
+                        btnToggle.classList.remove('from-red-600', 'to-red-700');
+                        btnToggle.classList.add('from-green-600', 'to-green-700');
+                        iconToggle.setAttribute('data-lucide', 'play');
+                        textToggle.textContent = 'INICIAR DETECCIÓN';
+                        recordingIndicator.style.display = 'none';
+                        updateStatus('VIDEO EN PAUSA');
+                        showNotification('Detección DESACTIVADA', 'warning');
+                    }
+                }
+                
+                lucide.createIcons();
+            } catch (error) {
+                console.error('Error:', error);
+                showNotification('Error al cambiar estado', 'error');
+            }
+        }
+        
+        async function resetCounter() {
+            if (confirm('¿Reiniciar contador? Se borrarán todos los datos.')) {
+                try {
+                    const response = await fetch('http://localhost:5000/api/reset', {
+                        method: 'POST'
+                    });
+                    
+                    if (response.ok) {
+                        document.getElementById('mainCounter').textContent = '0';
+                        document.getElementById('personasCount').textContent = '0';
+                        document.getElementById('vehiculosCount').textContent = '0';
+                        document.getElementById('animalesCount').textContent = '0';
+                        document.getElementById('objetosCount').textContent = '0';
+                        document.getElementById('activeObjects').textContent = '0';
+                        
+                        detectionHistory = [];
+                        updateHistoryTable();
+                        
+                        showNotification('Contador reiniciado', 'success');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    showNotification('Error al reiniciar', 'error');
+                }
+            }
+        }
+        
+        async function loadHistory() {
+            try {
+                const response = await fetch('http://localhost:5000/api/history');
+                const data = await response.json();
+                
+                if (data.history) {
+                    detectionHistory = data.history;
+                    updateHistoryTable();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+        
+        // ==================== UI ====================
+        function updateBackendStatus(connected) {
+            const status = document.getElementById('backendStatus');
+            const text = document.getElementById('backendText');
+            
+            if (connected) {
+                status.classList.add('bg-green-500');
+                status.classList.remove('bg-red-500');
+                text.textContent = 'CONECTADO';
+                text.classList.add('text-green-400');
+                text.classList.remove('text-red-400');
+            } else {
+                status.classList.add('bg-red-500');
+                status.classList.remove('bg-green-500');
+                text.textContent = 'DESCONECTADO';
+                text.classList.add('text-red-400');
+                text.classList.remove('text-green-400');
+            }
+        }
+        
+        function updateDetectorStatus(active) {
+            const status = document.getElementById('detectorStatus');
+            const text = document.getElementById('detectorText');
+            
+            if (active) {
+                status.classList.add('bg-green-500');
+                status.classList.remove('bg-red-500');
+                text.textContent = 'ACTIVO';
+                text.classList.add('text-green-400');
+                text.classList.remove('text-red-400');
+            } else {
+                status.classList.add('bg-red-500');
+                status.classList.remove('bg-green-500');
+                text.textContent = 'INACTIVO';
+                text.classList.add('text-red-400');
+                text.classList.remove('text-green-400');
+            }
+        }
+        
+        function updateFileStatus(loaded, type) {
+            const status = document.getElementById('fileStatus');
+            const text = document.getElementById('fileText');
+            
+            if (loaded) {
+                status.classList.add('bg-green-500');
+                status.classList.remove('bg-gray-500');
+                text.textContent = type === 'image' ? 'IMAGEN' : 'VIDEO';
+                text.classList.add('text-green-400');
+                text.classList.remove('text-gray-400');
+            } else {
+                status.classList.add('bg-gray-500');
+                status.classList.remove('bg-green-500');
+                text.textContent = 'SIN CARGAR';
+                text.classList.add('text-gray-400');
+                text.classList.remove('text-green-400');
+            }
+        }
+        
+        function updateHistoryTable() {
+            const tbody = document.getElementById('historyTable');
+            
+            if (detectionHistory.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-12 text-center text-gray-500 font-orbitron">
+                            <i data-lucide="database" class="w-12 h-12 mx-auto mb-3 opacity-30"></i>
+                            <div>NO HAY REGISTROS</div>
+                        </td>
+                    </tr>
+                `;
+                lucide.createIcons();
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            const recentHistory = detectionHistory.slice(-100).reverse();
+            
+            const categoryColors = {
+                'personas': 'cyan',
+                'vehiculos': 'green',
+                'animales': 'yellow',
+                'objetos': 'purple'
+            };
+            
+            recentHistory.forEach(record => {
+                const color = categoryColors[record.category] || 'gray';
+                const firstSeen = new Date(record.first_seen * 1000).toLocaleTimeString('es-ES');
+                const lastSeen = new Date(record.last_seen * 1000).toLocaleTimeString('es-ES');
+                const duration = record.duration ? record.duration.toFixed(1) : '0.0';
+                
+                const row = document.createElement('tr');
+                row.className = 'border-b border-cyan-900 hover:bg-cyan-950 hover:bg-opacity-30 transition';
+                row.innerHTML = `
+                    <td class="py-3 px-2 text-${color}-400 font-bold">${record.id}</td>
+                    <td class="py-3 px-2 text-${color}-400">${record.category}</td>
+                    <td class="py-3 px-2">${record.class_name}</td>
+                    <td class="py-3 px-2">${firstSeen}</td>
+                    <td class="py-3 px-2">${lastSeen}</td>
+                    <td class="py-3 px-2">${duration}s</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        function changeView(view) {
+            document.getElementById('liveView').style.display = 'none';
+            document.getElementById('historyView').style.display = 'none';
+            
+            ['btnLive', 'btnHistory'].forEach(id => {
+                const btn = document.getElementById(id);
+                btn.classList.remove('bg-gradient-to-r', 'from-cyan-600', 'to-cyan-700', 'text-white', 'shadow-lg');
+                btn.classList.add('text-gray-300', 'hover:bg-gray-800');
+            });
+            
+            if (view === 'live') {
+                document.getElementById('liveView').style.display = 'block';
+                const btn = document.getElementById('btnLive');
+                btn.classList.add('bg-gradient-to-r', 'from-cyan-600', 'to-cyan-700', 'text-white', 'shadow-lg');
+                btn.classList.remove('text-gray-300', 'hover:bg-gray-800');
+            } else if (view === 'history') {
+                document.getElementById('historyView').style.display = 'block';
+                const btn = document.getElementById('btnHistory');
+                btn.classList.add('bg-gradient-to-r', 'from-cyan-600', 'to-cyan-700', 'text-white', 'shadow-lg');
+                btn.classList.remove('text-gray-300', 'hover:bg-gray-800');
+                loadHistory();
+            }
+        }
+        
+        // ==================== UTILIDADES ====================
+        function captureFrame() {
+            const videoDisplay = document.getElementById('videoDisplay');
+            
+            if (!videoDisplay.src || videoDisplay.src === '' || videoDisplay.style.display === 'none') {
+                showNotification('No hay frame para capturar', 'warning');
+                return;
+            }
+            
+            // Crear canvas temporal
+            const canvas = document.createElement('canvas');
+            canvas.width = videoDisplay.naturalWidth;
+            canvas.height = videoDisplay.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            
+            // Dibujar imagen
+            ctx.drawImage(videoDisplay, 0, 0);
+            
+            // Marca de agua
+            ctx.fillStyle = 'rgba(6, 182, 212, 0.9)';
+            ctx.fillRect(10, 10, 500, 100);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 24px Orbitron';
+            ctx.fillText('DETECTOR MULTICLASE IA', 20, 45);
+            ctx.font = '16px Rajdhani';
+            ctx.fillText(`Total: ${document.getElementById('mainCounter').textContent} objetos`, 20, 70);
+            ctx.fillText(new Date().toLocaleString('es-ES'), 20, 95);
+            
+            // Descargar
+            canvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Deteccion_${new Date().getTime()}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                showNotification('Captura guardada correctamente', 'success');
+            });
+        }
+        
+        function exportData() {
+            if (detectionHistory.length === 0) {
+                showNotification('No hay datos para exportar', 'warning');
+                return;
+            }
+            
+            let csv = 'ID,Categoría,Clase,Primera Vez,Última Vez,Duración(s)\n';
+            detectionHistory.forEach(record => {
+                const firstSeen = new Date(record.first_seen * 1000).toISOString();
+                const lastSeen = new Date(record.last_seen * 1000).toISOString();
+                const duration = record.duration ? record.duration.toFixed(2) : '0.00';
+                csv += `${record.id},${record.category},${record.class_name},${firstSeen},${lastSeen},${duration}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Detector_Report_${new Date().getTime()}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showNotification('Reporte CSV exportado', 'success');
+        }
+        
+        function showNotification(message, type = 'info') {
+            const notifications = document.getElementById('notifications');
+            const notification = document.createElement('div');
+            
+            const colors = {
+                success: 'from-green-600 to-green-700',
+                error: 'from-red-600 to-red-700',
+                warning: 'from-yellow-600 to-yellow-700',
+                info: 'from-cyan-600 to-cyan-700'
+            };
+            
+            const icons = {
+                success: 'check-circle',
+                error: 'x-circle',
+                warning: 'alert-triangle',
+                info: 'info'
+            };
+            
+            notification.className = `bg-gradient-to-r ${colors[type]} text-white p-4 rounded-lg shadow-2xl mb-3 flex items-center space-x-3 slide-in border-2 border-white border-opacity-20`;
+            notification.innerHTML = `
+                <i data-lucide="${icons[type]}" class="w-5 h-5 flex-shrink-0"></i>
+                <span class="font-rajdhani font-semibold text-sm">${message}</span>
+            `;
+            
+            notifications.appendChild(notification);
+            lucide.createIcons();
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
+                notification.style.transition = 'all 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 4000);
+        }
+        
+        function updateStatus(text) {
+            document.getElementById('statusText').textContent = text;
+        }
+    </script>
+</body>
+</html>
