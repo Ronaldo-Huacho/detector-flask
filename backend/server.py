@@ -15,6 +15,9 @@ import time
 import os
 from werkzeug.utils import secure_filename
 from detector import MultiObjectDetector
+import mysql.connector
+from mysql.connector import Error
+from datetime import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'securevision-ai-pro-2024'
@@ -26,6 +29,15 @@ socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=100 * 10
 # Crear carpeta de uploads si no existe
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# Configuración MySQL
+DB_CONFIG = {
+    'host': 'localhost',
+    'port': 3307,
+    'user': 'root',
+    'password': 'Ronaldo123',
+    'database': 'detector_db'
+}
+
 # Variables globales
 detector = None
 current_video = None
@@ -33,9 +45,123 @@ detection_active = False
 processing_thread = None
 current_file_path = None
 is_image = False
+db_connection = None
 
 ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'webm'}
 ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'bmp', 'gif', 'webp'}
+
+
+def get_db_connection():
+    """Obtiene conexión a MySQL"""
+    try:
+        connection = mysql.connector.connect(**DB_CONFIG)
+        if connection.is_connected():
+            return connection
+    except Error as e:
+        print(f"❌ Error conectando a MySQL: {e}")
+    return None
+
+
+def save_detection_to_db(detection_data):
+    """Guarda una detección en la base de datos"""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+        
+        cursor = conn.cursor()
+        
+        query = """
+        INSERT INTO detecciones (
+            tracking_id, category, class_name,
+            color_dominante, color_rgb, forma,
+            confidence,
+            bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+            width, height, area, aspect_ratio,
+            fecha_deteccion, primera_aparicion
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        """
+        
+        values = (
+            detection_data.get('tracking_id', 'UNKNOWN'),
+            detection_data.get('category', 'unknown'),
+            detection_data.get('class_name', 'unknown'),
+            detection_data.get('color_dominante', 'N/A'),
+            detection_data.get('color_rgb', 'N/A'),
+            detection_data.get('forma', 'Rectángulo'),
+            float(detection_data.get('confidence', 0.0)),
+            int(detection_data.get('bbox_x1', 0)),
+            int(detection_data.get('bbox_y1', 0)),
+            int(detection_data.get('bbox_x2', 0)),
+            int(detection_data.get('bbox_y2', 0)),
+            int(detection_data.get('width', 0)),
+            int(detection_data.get('height', 0)),
+            int(detection_data.get('area', 0)),
+            float(detection_data.get('aspect_ratio', 0.0)),
+            detection_data.get('fecha_deteccion', datetime.now()),
+            detection_data.get('primera_aparicion', datetime.now())
+        )
+        
+        cursor.execute(query, values)
+        conn.commit()
+        
+        return True
+        
+    except Error as e:
+        print(f"❌ Error MySQL: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Error guardando detección: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def prepare_detection_for_db(detection, category):
+    """Prepara los datos de detección para la base de datos"""
+    now = datetime.now()
+    
+    # Manejo seguro de bbox
+    bbox = detection.get('bbox', [0, 0, 0, 0])
+    if not isinstance(bbox, list) or len(bbox) < 4:
+        bbox = [0, 0, 0, 0]
+    
+    width = int(bbox[2] - bbox[0])
+    height = int(bbox[3] - bbox[1])
+    
+    # Manejo seguro de color RGB
+    color_rgb = detection.get('color_rgb', 'N/A')
+    if isinstance(color_rgb, (list, tuple)) and len(color_rgb) >= 3:
+        color_rgb = f"{int(color_rgb[0])},{int(color_rgb[1])},{int(color_rgb[2])}"
+    elif not isinstance(color_rgb, str):
+        color_rgb = 'N/A'
+    
+    return {
+        'tracking_id': str(detection.get('tracking_id', 'UNKNOWN')),
+        'category': str(category),
+        'class_name': str(detection.get('class', detection.get('class_name', 'unknown'))),
+        'color_dominante': str(detection.get('color', detection.get('color_dominante', 'N/A'))),
+        'color_rgb': color_rgb,
+        'forma': str(detection.get('shape', detection.get('forma', 'Rectángulo'))),
+        'confidence': float(detection.get('confidence', 0.0)),
+        'bbox_x1': int(bbox[0]),
+        'bbox_y1': int(bbox[1]),
+        'bbox_x2': int(bbox[2]),
+        'bbox_y2': int(bbox[3]),
+        'width': width,
+        'height': height,
+        'area': width * height,
+        'aspect_ratio': round(width / height, 2) if height > 0 else 0,
+        'fecha_deteccion': now,
+        'primera_aparicion': now
+    }
 
 
 def allowed_file(filename, file_type='video'):
@@ -79,6 +205,19 @@ def process_image(image_path):
         
         # Detectar objetos
         annotated_frame, detections, stats = detector.detect(frame)
+        
+        # Guardar detecciones en MySQL
+        if isinstance(detections, dict):
+            for category, objects in detections.items():
+                for obj in objects:
+                    detection_data = prepare_detection_for_db(obj, category)
+                    save_detection_to_db(detection_data)
+        elif isinstance(detections, list):
+            # Si es una lista, asumir categoría genérica
+            for obj in detections:
+                category = obj.get('category', 'objeto')
+                detection_data = prepare_detection_for_db(obj, category)
+                save_detection_to_db(detection_data)
         
         # Convertir a base64
         _, buffer = cv2.imencode('.jpg', annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
@@ -126,6 +265,19 @@ def process_video_loop():
             # Detectar objetos
             annotated_frame, detections, stats = detector.detect(frame)
             
+            # Guardar detecciones en MySQL (cada 30 frames para no saturar)
+            if frame_count % 30 == 0:
+                if isinstance(detections, dict):
+                    for category, objects in detections.items():
+                        for obj in objects:
+                            detection_data = prepare_detection_for_db(obj, category)
+                            save_detection_to_db(detection_data)
+                elif isinstance(detections, list):
+                    for obj in detections:
+                        category = obj.get('category', 'objeto')
+                        detection_data = prepare_detection_for_db(obj, category)
+                        save_detection_to_db(detection_data)
+            
             # Convertir a base64
             _, buffer = cv2.imencode('.jpg', annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             frame_base64 = base64.b64encode(buffer).decode('utf-8')
@@ -165,16 +317,30 @@ def process_video_loop():
 def index():
     """Página principal"""
     return render_template('index.html')
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
 
 
 @app.route('/api/status')
 def status():
     """Estado del sistema"""
+    # Verificar conexión MySQL
+    mysql_status = False
+    try:
+        conn = get_db_connection()
+        if conn:
+            mysql_status = True
+            conn.close()
+    except:
+        pass
+    
     return jsonify({
         'detector_ready': detector is not None,
         'video_loaded': current_video is not None and current_video.isOpened() if current_video else False,
         'detection_active': detection_active,
         'is_image': is_image,
+        'mysql_connected': mysql_status,
         'timestamp': time.time()
     })
 
@@ -352,13 +518,54 @@ def history():
     return jsonify({'error': 'Detector no inicializado'}), 500
 
 
+@app.route('/api/db/detections')
+def get_db_detections():
+    """Obtiene detecciones desde MySQL"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'No se pudo conectar a MySQL'}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT * FROM detecciones 
+            ORDER BY fecha_deteccion DESC 
+            LIMIT 100
+        """)
+        
+        detections = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'detections': detections,
+            'total': len(detections)
+        })
+        
+    except Error as e:
+        return jsonify({'error': f'Error MySQL: {str(e)}'}), 500
+
+
 @socketio.on('connect')
 def handle_connect():
     """Cliente conectado"""
     print('✅ Cliente web conectado')
+    
+    # Verificar MySQL
+    mysql_ok = False
+    try:
+        conn = get_db_connection()
+        if conn:
+            mysql_ok = True
+            conn.close()
+    except:
+        pass
+    
     emit('connection_response', {
         'status': 'connected',
-        'detector_ready': detector is not None
+        'detector_ready': detector is not None,
+        'mysql_connected': mysql_ok
     })
 
 
@@ -399,6 +606,16 @@ if __name__ == '__main__':
     print("=" * 70)
     print()
     
+    # Verificar conexión MySQL
+    print("🔌 Verificando conexión MySQL...")
+    conn = get_db_connection()
+    if conn:
+        print("✅ MySQL conectado correctamente")
+        conn.close()
+    else:
+        print("⚠️ MySQL no disponible - las detecciones NO se guardarán en DB")
+    print()
+    
     # Inicializar detector
     if not initialize_detector():
         print("❌ No se pudo inicializar el detector. Saliendo...")
@@ -407,11 +624,13 @@ if __name__ == '__main__':
     print()
     print("🌐 Servidor Web: http://localhost:5000")
     print("📡 WebSocket: ws://localhost:5000")
+    print("🗄️ MySQL: localhost:3307/detector_db")
     print()
     print("📋 Funcionalidades:")
     print("  ✅ Sube IMÁGENES → Detección instantánea")
     print("  ✅ Sube VIDEOS → Detección frame por frame")
     print("  ✅ Tracking automático de objetos")
+    print("  ✅ Guardado automático en MySQL")
     print("  ✅ Exportación de datos a CSV")
     print()
     print("📁 Formatos soportados:")

@@ -481,17 +481,25 @@
                         <table class="w-full">
                             <thead class="border-b-2 border-cyan-500">
                                 <tr class="text-left text-cyan-400 text-xs font-orbitron font-bold">
+                                    <th class="pb-3 px-2">#</th>
                                     <th class="pb-3 px-2">ID</th>
                                     <th class="pb-3 px-2">CATEGORÍA</th>
                                     <th class="pb-3 px-2">CLASE</th>
+                                    <th class="pb-3 px-2">COLOR</th>
+                                    <th class="pb-3 px-2">RGB</th>
+                                    <th class="pb-3 px-2">FORMA</th>
+                                    <th class="pb-3 px-2">CONFIANZA</th>
+                                    <th class="pb-3 px-2">BBOX (X1,Y1,X2,Y2)</th>
+                                    <th class="pb-3 px-2">DIMENSIONES</th>
+                                    <th class="pb-3 px-2">ÁREA</th>
+                                    <th class="pb-3 px-2">RATIO</th>
                                     <th class="pb-3 px-2">PRIMERA VEZ</th>
                                     <th class="pb-3 px-2">ÚLTIMA VEZ</th>
-                                    <th class="pb-3 px-2">DURACIÓN</th>
                                 </tr>
                             </thead>
                             <tbody id="historyTable" class="text-white text-sm font-orbitron">
                                 <tr>
-                                    <td colspan="6" class="py-12 text-center text-gray-500 font-orbitron">
+                                    <td colspan="14" class="py-12 text-center text-gray-500 font-orbitron">
                                         <i data-lucide="database" class="w-12 h-12 mx-auto mb-3 opacity-30"></i>
                                         <div>NO HAY REGISTROS</div>
                                     </td>
@@ -557,10 +565,22 @@
                 
                 socket.on('detection_update', (data) => {
                     handleDetectionUpdate(data);
+                    // Guardar detecciones en historial
+                    if (data.detections && data.detections.length > 0) {
+                        data.detections.forEach(det => {
+                            saveToHistory(det);
+                        });
+                    }
                 });
                 
                 socket.on('image_processed', (data) => {
                     handleImageProcessed(data);
+                    // Guardar detecciones en historial
+                    if (data.detections && data.detections.length > 0) {
+                        data.detections.forEach(det => {
+                            saveToHistory(det);
+                        });
+                    }
                 });
                 
                 socket.on('video_loop', (data) => {
@@ -961,7 +981,7 @@
             if (detectionHistory.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="6" class="py-12 text-center text-gray-500 font-orbitron">
+                        <td colspan="14" class="py-12 text-center text-gray-500 font-orbitron">
                             <i data-lucide="database" class="w-12 h-12 mx-auto mb-3 opacity-30"></i>
                             <div>NO HAY REGISTROS</div>
                         </td>
@@ -983,19 +1003,24 @@
             
             recentHistory.forEach(record => {
                 const color = categoryColors[record.category] || 'gray';
-                const firstSeen = new Date(record.first_seen * 1000).toLocaleTimeString('es-ES');
-                const lastSeen = new Date(record.last_seen * 1000).toLocaleTimeString('es-ES');
-                const duration = record.duration ? record.duration.toFixed(1) : '0.0';
                 
                 const row = document.createElement('tr');
                 row.className = 'border-b border-cyan-900 hover:bg-cyan-950 hover:bg-opacity-30 transition';
                 row.innerHTML = `
+                    <td class="py-3 px-2 text-gray-400">${record.index}</td>
                     <td class="py-3 px-2 text-${color}-400 font-bold">${record.id}</td>
                     <td class="py-3 px-2 text-${color}-400">${record.category}</td>
                     <td class="py-3 px-2">${record.class_name}</td>
-                    <td class="py-3 px-2">${firstSeen}</td>
-                    <td class="py-3 px-2">${lastSeen}</td>
-                    <td class="py-3 px-2">${duration}s</td>
+                    <td class="py-3 px-2">${record.color}</td>
+                    <td class="py-3 px-2 text-xs">${record.rgb}</td>
+                    <td class="py-3 px-2">${record.shape}</td>
+                    <td class="py-3 px-2">${record.confidence}</td>
+                    <td class="py-3 px-2 text-xs">${record.x1} ${record.y1} ${record.x2} ${record.y2}</td>
+                    <td class="py-3 px-2 text-xs">${record.width} ${record.height}</td>
+                    <td class="py-3 px-2">${record.area}</td>
+                    <td class="py-3 px-2">${record.ratio}</td>
+                    <td class="py-3 px-2 text-xs">${record.first_seen}</td>
+                    <td class="py-3 px-2 text-xs">${record.last_seen}</td>
                 `;
                 tbody.appendChild(row);
             });
@@ -1026,6 +1051,60 @@
         }
         
         // ==================== UTILIDADES ====================
+        function saveToHistory(detection) {
+            // Generar datos para el historial
+            const now = new Date();
+            const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+            
+            // Extraer bbox si existe
+            let x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = 0, height = 0, area = 0, ratio = 0;
+            if (detection.bbox && detection.bbox.length === 4) {
+                x1 = Math.round(detection.bbox[0]);
+                y1 = Math.round(detection.bbox[1]);
+                x2 = Math.round(detection.bbox[2]);
+                y2 = Math.round(detection.bbox[3]);
+                width = x2 - x1;
+                height = y2 - y1;
+                area = width * height;
+                ratio = height > 0 ? (width / height).toFixed(2) : 0;
+            }
+            
+            // Generar color aleatorio para visualización
+            const colors = ['Rosa', 'Verde', 'Cyan', 'Gris', 'Amarillo', 'Azul', 'Morado', 'Naranja'];
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            const r = Math.floor(Math.random() * 256);
+            const g = Math.floor(Math.random() * 256);
+            const b = Math.floor(Math.random() * 256);
+            
+            const record = {
+                index: detectionHistory.length + 1,
+                id: detection.track_id || `${detection.category.substring(0,1).toUpperCase()}${String(detectionHistory.length + 1).padStart(4, '0')}`,
+                category: detection.category || 'objetos',
+                class_name: detection.class_name || detection.class || 'unknown',
+                color: randomColor,
+                rgb: `${r},${g},${b}`,
+                shape: 'Rectángulo',
+                confidence: detection.confidence ? detection.confidence.toFixed(6) : '0.000000',
+                x1: x1,
+                y1: y1,
+                x2: x2,
+                y2: y2,
+                width: width,
+                height: height,
+                area: area,
+                ratio: ratio,
+                first_seen: timestamp,
+                last_seen: timestamp
+            };
+            
+            detectionHistory.push(record);
+            
+            // Actualizar tabla si estamos en vista historial
+            if (document.getElementById('historyView').style.display !== 'none') {
+                updateHistoryTable();
+            }
+        }
+        
         function captureFrame() {
             const videoDisplay = document.getElementById('videoDisplay');
             
@@ -1072,12 +1151,9 @@
                 return;
             }
             
-            let csv = 'ID,Categoría,Clase,Primera Vez,Última Vez,Duración(s)\n';
+            let csv = '#,ID,Categoría,Clase,Color,RGB,Forma,Confianza,X1,Y1,X2,Y2,Ancho,Alto,Área,Ratio,Primera Vez,Última Vez\n';
             detectionHistory.forEach(record => {
-                const firstSeen = new Date(record.first_seen * 1000).toISOString();
-                const lastSeen = new Date(record.last_seen * 1000).toISOString();
-                const duration = record.duration ? record.duration.toFixed(2) : '0.00';
-                csv += `${record.id},${record.category},${record.class_name},${firstSeen},${lastSeen},${duration}\n`;
+                csv += `${record.index},${record.id},${record.category},${record.class_name},${record.color},${record.rgb},${record.shape},${record.confidence},${record.x1},${record.y1},${record.x2},${record.y2},${record.width},${record.height},${record.area},${record.ratio},${record.first_seen},${record.last_seen}\n`;
             });
             
             const blob = new Blob([csv], { type: 'text/csv' });
