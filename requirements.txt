@@ -55,3 +55,7 @@ imageai
 opencv-python
 ultralytics
 gunicorn
+Flask==3.0.3
+flask-socketio==5.5.1
+opencv-python
+ultralytics
