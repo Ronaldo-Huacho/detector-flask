@@ -1,20 +1,28 @@
-# Imagen base de Python
 FROM python:3.11-slim
 
-# Establecer directorio de trabajo
 WORKDIR /app
 
-# Copiar requirements
+# Instalar dependencias del sistema para OpenCV
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar requirements.txt
 COPY requirements.txt .
 
-# Instalar dependencias
+# Instalar dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar todo el proyecto
 COPY . .
 
-# Exponer el puerto que Flask usará
-EXPOSE 8080
+# Exponer el puerto
+EXPOSE 5000
 
-# Comando para ejecutar tu app
-CMD ["python", "backend/server.py"]
+# Comando para iniciar la aplicación
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "120", "backend.server:app"]
