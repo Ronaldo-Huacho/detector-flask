@@ -4,17 +4,13 @@ flask-cors==4.0.0
 python-socketio==5.10.0
 python-engineio==4.8.0
 
-# OpenCV - versiones más recientes
 opencv-python==4.9.0.80
 opencv-contrib-python==4.9.0.80
 
-# PyTorch - versión más reciente compatible
-torch==2.1.2+cpu
-torchvision==0.16.2+cpu
+torch==2.5.1
+torchvision==0.20.1
 
-# YOLO - versión compatible con Python 3.11
-ultralytics==8.0.196
+ultralytics==8.3.0
 
-# Otras dependencias necesarias
 numpy<2.0.0
 pillow
