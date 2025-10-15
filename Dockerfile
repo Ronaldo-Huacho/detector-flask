@@ -22,8 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar todo el proyecto
 COPY . .
 
+# Configurar PYTHONPATH para que encuentre los módulos de backend
+ENV PYTHONPATH=/app/backend
+
 # Exponer el puerto
 EXPOSE 5000
 
-# Comando para iniciar la aplicación
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "120", "backend.server:app"]
+# Comando para iniciar la aplicación desde la carpeta backend
+WORKDIR /app/backend
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "120", "server:app"]
